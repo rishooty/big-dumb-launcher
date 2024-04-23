@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -17,7 +19,7 @@ const (
 
 func main() {
 	// Initialize SDL
-	sdl.Init(sdl.INIT_VIDEO)
+	sdl.Init(sdl.INIT_VIDEO | sdl.INIT_JOYSTICK)
 	defer sdl.Quit()
 
 	// Initialize SDL_ttf
@@ -60,10 +62,23 @@ func main() {
 		// Handle error
 	}
 
+	var startPressed, selectPressed bool
+	var startPressTime, selectPressTime time.Time
+
+	// Open the first joystick
+	joystick := sdl.JoystickOpen(0)
+	defer joystick.Close()
+
 	// Main loop
 	running := true
 	for running {
-		// Handle events
+		if joystick == nil {
+			joystick.Close()
+			joystick = sdl.JoystickOpen(0)
+			if joystick == nil {
+				fmt.Println("Reconnecting joystick failed")
+			}
+		}
 		// Inside your main loop
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch e := event.(type) {
@@ -102,9 +117,97 @@ func main() {
 						}
 					}
 				}
+			case *sdl.JoyAxisEvent:
+				// Handle joystick axis motion
+				if e.Axis == 1 { // Assuming axis 1 is the vertical axis
+					if e.Value < 0 {
+						// Move selection up
+						if currentSelection > 0 {
+							currentSelection--
+						}
+					} else if e.Value > 0 {
+						// Move selection down
+						if currentSelection < len(files)-1 {
+							currentSelection++
+						}
+					}
+				}
+			case *sdl.JoyButtonEvent:
+				fmt.Println(e.Button)
+				if e.Button == sdl.CONTROLLER_BUTTON_START {
+					if e.State == sdl.PRESSED {
+						startPressed = true
+						startPressTime = time.Now()
+					} else if e.State == sdl.RELEASED {
+						startPressed = false
+						if selectPressed && time.Since(selectPressTime) >= 3*time.Second {
+							running = false // Exit the application
+						}
+					}
+				} else if e.Button == sdl.CONTROLLER_BUTTON_BACK {
+					if e.State == sdl.PRESSED {
+						selectPressed = true
+						selectPressTime = time.Now()
+					} else if e.State == sdl.RELEASED {
+						selectPressed = false
+						if startPressed && time.Since(startPressTime) >= 3*time.Second {
+							running = false // Exit the application
+						}
+					}
+				} else if e.State == sdl.PRESSED {
+					switch e.Button {
+					case sdl.CONTROLLER_BUTTON_A: // Assuming button 0 is the A button or equivalent
+						// Enter the selected directory or select the file
+						if files[currentSelection].IsDir() {
+							// Change the current directory
+							path = filepath.Join(path, files[currentSelection].Name())
+							// Re-read the directory
+							files, _ = os.ReadDir(path)
+							currentSelection = 0
+						} else {
+							selectedFileName := files[currentSelection].Name()
+
+							// Handle file selection
+							// Get the parent directory's name
+							parentDirName := filepath.Base(path)
+							fmt.Println("Parent directory name:", parentDirName)
+
+							// Get the full path of the selected file
+							fullFilePath := filepath.Join(path, selectedFileName)
+							fmt.Println("Selected file full path:", fullFilePath)
+
+							// Create a command to execute 'nano example.txt'
+							var cmd *exec.Cmd
+							if selectedFileName == "self.txt" {
+								cmd = exec.Command(parentDirName)
+							} else {
+								cmd = exec.Command(parentDirName, fullFilePath)
+							}
+
+							// Connect the command's stdin, stdout, and stderr to those of the parent process
+							cmd.Stdin = os.Stdin
+							cmd.Stdout = os.Stdout
+							cmd.Stderr = os.Stderr
+
+							// Run the command
+							err := cmd.Run()
+							if err != nil {
+								fmt.Println("Error executing command:", err)
+								return
+							}
+						}
+					case sdl.CONTROLLER_BUTTON_B: // Assuming button 1 is the B button or equivalent
+						// Go back to the parent directory
+						parent := filepath.Dir(path)
+						if parent != path {
+							path = parent
+							// Re-read the directory
+							files, _ = os.ReadDir(path)
+						}
+					}
+				}
 			}
 		}
-
 		// Clear the screen
 		renderer.Clear()
 
