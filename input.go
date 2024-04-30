@@ -125,7 +125,6 @@ func (app *App) selectOrLaunch() {
 				value := segment[dotIndex+1:]
 				args = append(args, flag, value)
 			} else {
-				// This segment is a directory name
 				args = append(args, segment)
 			}
 		}
@@ -143,7 +142,20 @@ func (app *App) selectOrLaunch() {
 		err := cmd.Run()
 		if err != nil {
 			fmt.Println("Error executing command:", err)
-			return
+			// Try with short-form options if long-form fails
+			for i, arg := range args[1:] {
+				if strings.HasPrefix(arg, "--") {
+					args[i+1] = "-" + arg[2:] // Convert to short-form
+				}
+			}
+			fmt.Println("Retrying with short-form options...")
+			cmd = exec.Command(args[0], args[1:]...)
+			fmt.Println("Executing command:", cmd.String())
+			err = cmd.Run()
+			if err != nil {
+				fmt.Println("Error executing command with short-form options:", err)
+				return
+			}
 		}
 	}
 }
