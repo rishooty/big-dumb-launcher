@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -98,25 +99,47 @@ func (app *App) selectOrLaunch() {
 		app.currentSelection = 0
 	} else {
 		selectedFileName := app.files[app.currentSelection].Name()
-
-		parentDirName := filepath.Base(app.path)
-		// fmt.Println("Parent directory name:", parentDirName)
-
 		fullFilePath := filepath.Join(app.path, selectedFileName)
-		// fmt.Println("Selected file full path:", fullFilePath)
 
-		var cmd *exec.Cmd
-		if selectedFileName == "self.txt" {
-			cmd = exec.Command(parentDirName)
-		} else {
-			cmd = exec.Command(parentDirName, fullFilePath)
+		// Split the path to handle each segment
+		pathSegments := strings.Split(app.path, "/")[1:] // Skip the 'testpath'
+		var args []string
+
+		// Assume the command is the first segment and handle the dot notation
+		if len(pathSegments) > 0 {
+			commandSegment := pathSegments[0]
+			if dotIndex := strings.Index(commandSegment, "."); dotIndex != -1 {
+				command := commandSegment[:dotIndex]
+				args = append(args, command)
+				flag := "--" + commandSegment[dotIndex+1:]
+				args = append(args, flag)
+			} else {
+				args = append(args, commandSegment)
+			}
 		}
 
+		// Handle each subsequent segment, transforming into command line arguments
+		for _, segment := range pathSegments[1:] {
+			if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
+				flag := "--" + segment[:dotIndex]
+				value := segment[dotIndex+1:]
+				args = append(args, flag, value)
+			} else {
+				// This segment is a directory name
+				args = append(args, segment)
+			}
+		}
+
+		// Add the selected file
+		args = append(args, fullFilePath)
+
+		// Execute the command
+		cmd := exec.Command(args[0], args[1:]...)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		// Run the command
+		fmt.Println("Executing command:", cmd.String())
 		err := cmd.Run()
 		if err != nil {
 			fmt.Println("Error executing command:", err)
