@@ -119,10 +119,16 @@ func (app *App) selectOrLaunch() {
 		}
 
 		// Handle each subsequent segment, transforming into command line arguments
-		for _, segment := range pathSegments[1:] {
+		for segIndex, segment := range pathSegments[1:] {
 			if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
-				flag := "--" + segment[:dotIndex]
-				value := segment[dotIndex+1:]
+				flag := ""
+				value := ""
+				if segIndex != 0 {
+					flag = "--" + segment[:dotIndex]
+				} else {
+					flag = segment[:dotIndex]
+					value = "--" + segment[dotIndex+1:]
+				}
 				args = append(args, flag, value)
 			} else {
 				args = append(args, segment)
