@@ -1,5 +1,7 @@
 # big-dumb-launcher
 simple game launcher experiment in go
+![Alt text](/screenshots/ares-test.png?raw=true "Optional Title")
+
 
 Goal is to have a “port” of the command line or desktop that is usable by a controller. You are encouraged to do setup via mouse and keyboard, FTP, SSH, config files, etc, but then do your actual game launching/controller/wifi/sound/power, etc with your controller. There will ideally be little to zero config files other than controller mappings and “last opened”.
 
