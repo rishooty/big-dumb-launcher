@@ -3,7 +3,7 @@ simple game launcher experiment in go
 
 Goal is to have a “port” of the command line or desktop that is usable by a controller. You are encouraged to do setup via mouse and keyboard, FTP, SSH, config files, etc, but then do your actual game launching/controller/wifi/sound/power, etc with your controller. There will ideally be little to zero config files other than controller mappings and “last opened”.
 
-**Basically: easy for users, easy for (linux) masters.**
+**Basically: easy for users, easy for (linux) masters, no in between.**
 
 * Implemented
     * Launch macOS/linux programs from $PATH based on your file structure and naming.
