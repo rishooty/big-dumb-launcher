@@ -152,7 +152,7 @@ func (app *App) handleSegment(segment string, segIndex int, args []string) []str
 			flag = segment[:dotIndex]
 			value = "--" + segment[dotIndex+1:]
 		}
-		args = append(args, flag, value)
+		args = append(args, flag, value) // else if a matching file was found (above), swap in its full filepath
 	} else {
 		args = append(args, segment)
 	}
