@@ -88,80 +88,102 @@ func (app *App) moveSelectBack() {
 	parent := filepath.Dir(app.path)
 	if parent != app.path {
 		app.path = parent
-		app.files, _ = os.ReadDir(app.path)
+		app.files, _ = os.ReadDir(app.path) //create a method wrapper around readDir that performs "file+folder fusing"
 	}
 }
 
 func (app *App) selectOrLaunch() {
 	if app.files[app.currentSelection].IsDir() {
-		app.path = filepath.Join(app.path, app.files[app.currentSelection].Name())
-		app.files, _ = os.ReadDir(app.path)
-		app.currentSelection = 0
+		app.navigateToDirectory()
 	} else {
-		selectedFileName := app.files[app.currentSelection].Name()
-		fullFilePath := filepath.Join(app.path, selectedFileName)
+		app.launchFile()
+	}
+}
 
-		// Split the path to handle each segment
-		pathSegments := strings.Split(app.path, "/")[1:] // Skip the 'testpath'
-		var args []string
+func (app *App) navigateToDirectory() {
+	app.path = filepath.Join(app.path, app.files[app.currentSelection].Name())
+	app.files, _ = os.ReadDir(app.path)
+	app.currentSelection = 0
+}
 
-		// Assume the command is the first segment and handle the dot notation
-		if len(pathSegments) > 0 {
-			commandSegment := pathSegments[0]
-			if dotIndex := strings.Index(commandSegment, "."); dotIndex != -1 {
-				command := commandSegment[:dotIndex]
-				args = append(args, command)
-				flag := "--" + commandSegment[dotIndex+1:]
-				args = append(args, flag)
-			} else {
-				args = append(args, commandSegment)
-			}
+func (app *App) launchFile() {
+	selectedFileName := app.files[app.currentSelection].Name()
+	fullFilePath := filepath.Join(app.path, selectedFileName)
+	args := app.buildCommandArgs(fullFilePath)
+	app.executeCommand(args)
+}
+
+func (app *App) buildCommandArgs(filePath string) []string {
+	pathSegments := strings.Split(app.path, "/")[1:] // Skip the 'testpath'
+	var args []string
+
+	if len(pathSegments) > 0 {
+		args = app.handleCommandSegment(pathSegments[0])
+	}
+
+	for segIndex, segment := range pathSegments[1:] {
+		args = app.handleSegment(segment, segIndex, args)
+	}
+
+	args = append(args, filePath)
+	return args
+}
+
+func (app *App) handleCommandSegment(segment string) []string {
+	var args []string
+	if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
+		command := segment[:dotIndex]
+		args = append(args, command)
+		flag := "--" + segment[dotIndex+1:]
+		args = append(args, flag)
+	} else {
+		args = append(args, segment)
+	}
+	return args
+}
+
+func (app *App) handleSegment(segment string, segIndex int, args []string) []string {
+	if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
+		flag := ""
+		value := ""
+		if segIndex != 0 {
+			flag = "--" + segment[:dotIndex]
+		} else {
+			flag = segment[:dotIndex]
+			value = "--" + segment[dotIndex+1:]
 		}
+		args = append(args, flag, value)
+	} else {
+		args = append(args, segment)
+	}
+	return args
+}
 
-		// Handle each subsequent segment, transforming into command line arguments
-		for segIndex, segment := range pathSegments[1:] {
-			if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
-				flag := ""
-				value := ""
-				if segIndex != 0 {
-					flag = "--" + segment[:dotIndex]
-				} else {
-					flag = segment[:dotIndex]
-					value = "--" + segment[dotIndex+1:]
-				}
-				args = append(args, flag, value)
-			} else {
-				args = append(args, segment)
-			}
+func (app *App) executeCommand(args []string) {
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Println("Executing command:", cmd.String())
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error executing command:", err)
+		app.retryWithShortFormOptions(args)
+	}
+}
+
+func (app *App) retryWithShortFormOptions(args []string) {
+	for i, arg := range args[1:] {
+		if strings.HasPrefix(arg, "--") {
+			args[i+1] = "-" + arg[2:] // Convert to short-form
 		}
-
-		// Add the selected file
-		args = append(args, fullFilePath)
-
-		// Execute the command
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		fmt.Println("Executing command:", cmd.String())
-		err := cmd.Run()
-		if err != nil {
-			fmt.Println("Error executing command:", err)
-			// Try with short-form options if long-form fails
-			for i, arg := range args[1:] {
-				if strings.HasPrefix(arg, "--") {
-					args[i+1] = "-" + arg[2:] // Convert to short-form
-				}
-			}
-			fmt.Println("Retrying with short-form options...")
-			cmd = exec.Command(args[0], args[1:]...)
-			fmt.Println("Executing command:", cmd.String())
-			err = cmd.Run()
-			if err != nil {
-				fmt.Println("Error executing command with short-form options:", err)
-				return
-			}
-		}
+	}
+	fmt.Println("Retrying with short-form options...")
+	cmd := exec.Command(args[0], args[1:]...)
+	fmt.Println("Executing command:", cmd.String())
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error executing command with short-form options:", err)
 	}
 }
