@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -110,6 +111,52 @@ func (app *App) launchFileOrExecuteCommand() {
 	}
 }
 
+func (app *App) buildCommandArgs(filePath string) []string {
+	pathSegments := strings.Split(filePath, "/")[1:] // Skip the 'testpath'
+	var args []string
+
+	if len(pathSegments) > 0 {
+		args = app.handleCommandSegment(pathSegments[0])
+	}
+
+	for segIndex, segment := range pathSegments[1:] {
+		args = app.handleSegment(segment, segIndex, args)
+	}
+
+	args = append(args, filePath)
+	return args
+}
+
+func (app *App) handleCommandSegment(segment string) []string {
+	var args []string
+	if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
+		command := segment[:dotIndex]
+		args = append(args, command)
+		flag := "--" + segment[dotIndex+1:]
+		args = append(args, flag)
+	} else {
+		args = append(args, segment)
+	}
+	return args
+}
+
+func (app *App) handleSegment(segment string, segIndex int, args []string) []string {
+	if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
+		flag := ""
+		value := ""
+		if segIndex != 0 {
+			flag = "--" + segment[:dotIndex]
+		} else {
+			flag = segment[:dotIndex]
+			value = "--" + segment[dotIndex+1:]
+		}
+		args = append(args, flag, value) // else if a matching file was found (above), swap in its full filepath
+	} else {
+		args = append(args, segment)
+	}
+	return args
+}
+
 func (app *App) getCurrentNode() *FileNode {
 	currentNode := app.fileTree
 	for _, index := range app.getSelectionIndexes() {
@@ -149,6 +196,20 @@ func (app *App) getParentIndex(node *FileNode) int {
 	}
 
 	return 0
+}
+
+func (app *App) executeCommand(args []string) {
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Println("Executing command:", cmd.String())
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error executing command:", err)
+		app.retryWithShortFormOptions(args)
+	}
 }
 
 func (app *App) retryWithShortFormOptions(args []string) {
