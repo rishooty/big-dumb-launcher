@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -20,10 +22,17 @@ type App struct {
 	joystick         *sdl.Joystick
 	font             *ttf.Font
 	currentSelection int
-	files            []os.DirEntry
-	path             string
+	fileTree         *FileNode
 	running          bool
 	colors           Colors
+}
+
+type FileNode struct {
+	Name     string
+	Path     string
+	IsDir    bool
+	Command  []string
+	Children []*FileNode
 }
 
 func main() {
@@ -80,12 +89,64 @@ func (app *App) Init() error {
 		white:  sdl.Color{R: 255, G: 255, B: 255, A: 255},
 		yellow: sdl.Color{R: 255, G: 255, B: 0, A: 255},
 	}
-	app.path = "testpath"
-	app.files, err = os.ReadDir(app.path)
-	if err != nil {
-		return err
-	}
+
+	rootPath := "testpath"
+	app.fileTree = app.buildFileTree(rootPath)
+
 	return nil
+}
+
+func (app *App) buildFileTree(rootPath string) *FileNode {
+	rootNode := &FileNode{
+		Name:    filepath.Base(rootPath),
+		Path:    rootPath,
+		IsDir:   true,
+		Command: []string{},
+	}
+
+	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if path == rootPath {
+			return nil
+		}
+
+		segments := strings.Split(path, string(os.PathSeparator))
+		currentNode := rootNode
+
+		for _, segment := range segments[1:] {
+			found := false
+			for _, child := range currentNode.Children {
+				if child.Name == segment {
+					currentNode = child
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				newNode := &FileNode{
+					Name:     segment,
+					Path:     filepath.Join(currentNode.Path, segment),
+					IsDir:    info.IsDir(),
+					Children: []*FileNode{},
+				}
+				newNode.Command = app.buildCommandArgs(newNode.Path)
+				currentNode.Children = append(currentNode.Children, newNode)
+				currentNode = newNode
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		fmt.Println("Error building file tree:", err)
+	}
+
+	return rootNode
 }
 
 func (app *App) Run() {

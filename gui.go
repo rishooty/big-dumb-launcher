@@ -12,34 +12,44 @@ type Colors struct {
 }
 
 func (app *App) draw() {
-	for i, file := range app.files {
-		text := file.Name()
-		if file.IsDir() {
-			text += "/"
-		}
+	app.drawFileTree(app.fileTree, 0, 0)
+}
 
-		// Choose color based on selection
-		var color sdl.Color
-		if i == app.currentSelection {
-			color = app.colors.yellow
-		} else {
-			color = app.colors.white
-		}
-
-		surface, err := app.font.RenderUTF8Blended(text, color)
-		if err != nil {
-			fmt.Println("Could not render text:", err)
-			return
-		}
-		defer surface.Free()
-
-		texture, err := app.renderer.CreateTextureFromSurface(surface)
-		if err != nil {
-			fmt.Println("Could not create texture:", err)
-			return
-		}
-		defer texture.Destroy()
-
-		app.renderer.Copy(texture, nil, &sdl.Rect{X: 10, Y: 10 + int32(i*fontSize), W: surface.W, H: surface.H})
+func (app *App) drawFileTree(node *FileNode, depth, index int) int {
+	text := node.Name
+	if node.IsDir {
+		text += "/"
 	}
+
+	// Choose color based on selection
+	var color sdl.Color
+	if depth == 0 && index == app.currentSelection {
+		color = app.colors.yellow
+	} else {
+		color = app.colors.white
+	}
+
+	surface, err := app.font.RenderUTF8Blended(text, color)
+	if err != nil {
+		fmt.Println("Could not render text:", err)
+		return index
+	}
+	defer surface.Free()
+
+	texture, err := app.renderer.CreateTextureFromSurface(surface)
+	if err != nil {
+		fmt.Println("Could not create texture:", err)
+		return index
+	}
+	defer texture.Destroy()
+
+	app.renderer.Copy(texture, nil, &sdl.Rect{X: 10 + int32(depth*20), Y: 10 + int32(index*fontSize), W: surface.W, H: surface.H})
+
+	if node.IsDir {
+		for _, child := range node.Children {
+			index = app.drawFileTree(child, depth+1, index+1)
+		}
+	}
+
+	return index
 }

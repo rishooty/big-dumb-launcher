@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,7 +23,9 @@ func (app *App) pollInputs() {
 				case sdl.K_DOWN:
 					app.moveSelectDown()
 				case sdl.K_RETURN:
-					app.selectOrLaunch()
+					app.navigateToDirectory()
+				case sdl.K_SPACE:
+					app.launchFileOrExecuteCommand()
 				case sdl.K_BACKSPACE:
 					app.moveSelectBack()
 				}
@@ -63,7 +63,9 @@ func (app *App) pollInputs() {
 			} else if e.State == sdl.PRESSED {
 				switch e.Button {
 				case sdl.CONTROLLER_BUTTON_A:
-					app.selectOrLaunch()
+					app.navigateToDirectory()
+				case sdl.CONTROLLER_BUTTON_X:
+					app.launchFileOrExecuteCommand()
 				case sdl.CONTROLLER_BUTTON_B:
 					app.moveSelectBack()
 				}
@@ -79,98 +81,74 @@ func (app *App) moveSelectUp() {
 }
 
 func (app *App) moveSelectDown() {
-	if app.currentSelection < len(app.files)-1 {
+	currentNode := app.getCurrentNode()
+	if app.currentSelection < len(currentNode.Children)-1 {
 		app.currentSelection++
 	}
 }
 
 func (app *App) moveSelectBack() {
-	parent := filepath.Dir(app.path)
-	if parent != app.path {
-		app.path = parent
-		app.files, _ = os.ReadDir(app.path) //create a method wrapper around readDir that performs "file+folder fusing"
-	}
-}
-
-func (app *App) selectOrLaunch() {
-	if app.files[app.currentSelection].IsDir() {
-		app.navigateToDirectory()
-	} else {
-		app.launchFile()
+	currentNode := app.getCurrentNode()
+	if currentNode.Path != app.fileTree.Path {
+		app.currentSelection = app.getParentIndex(currentNode)
 	}
 }
 
 func (app *App) navigateToDirectory() {
-	app.path = filepath.Join(app.path, app.files[app.currentSelection].Name())
-	app.files, _ = os.ReadDir(app.path)
-	app.currentSelection = 0
-}
-
-func (app *App) launchFile() {
-	selectedFileName := app.files[app.currentSelection].Name()
-	fullFilePath := filepath.Join(app.path, selectedFileName)
-	args := app.buildCommandArgs(fullFilePath)
-	app.executeCommand(args)
-}
-
-func (app *App) buildCommandArgs(filePath string) []string {
-	pathSegments := strings.Split(app.path, "/")[1:] // Skip the 'testpath'
-	var args []string
-
-	if len(pathSegments) > 0 {
-		args = app.handleCommandSegment(pathSegments[0])
+	currentNode := app.getCurrentNode()
+	if currentNode.IsDir {
+		app.currentSelection = 0
 	}
-
-	for segIndex, segment := range pathSegments[1:] {
-		args = app.handleSegment(segment, segIndex, args)
-	}
-
-	args = append(args, filePath)
-	return args
 }
 
-func (app *App) handleCommandSegment(segment string) []string {
-	var args []string
-	if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
-		command := segment[:dotIndex]
-		args = append(args, command)
-		flag := "--" + segment[dotIndex+1:]
-		args = append(args, flag)
+func (app *App) launchFileOrExecuteCommand() {
+	currentNode := app.getCurrentNode()
+	if !currentNode.IsDir {
+		app.executeCommand(currentNode.Command)
 	} else {
-		args = append(args, segment)
+		app.executeCommand(currentNode.Command) //trim off the second segment
 	}
-	return args
 }
 
-func (app *App) handleSegment(segment string, segIndex int, args []string) []string {
-	if dotIndex := strings.Index(segment, "."); dotIndex != -1 {
-		flag := ""
-		value := ""
-		if segIndex != 0 {
-			flag = "--" + segment[:dotIndex]
-		} else {
-			flag = segment[:dotIndex]
-			value = "--" + segment[dotIndex+1:]
+func (app *App) getCurrentNode() *FileNode {
+	currentNode := app.fileTree
+	for _, index := range app.getSelectionIndexes() {
+		currentNode = currentNode.Children[index]
+	}
+	return currentNode
+}
+
+func (app *App) getSelectionIndexes() []int {
+	indexes := []int{}
+	node := app.fileTree
+	index := app.currentSelection
+
+	for {
+		if len(node.Children) == 0 {
+			break
 		}
-		args = append(args, flag, value) // else if a matching file was found (above), swap in its full filepath
-	} else {
-		args = append(args, segment)
+
+		indexes = append(indexes, index)
+		node = node.Children[index]
+		index = 0
 	}
-	return args
+
+	return indexes
 }
 
-func (app *App) executeCommand(args []string) {
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	fmt.Println("Executing command:", cmd.String())
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("Error executing command:", err)
-		app.retryWithShortFormOptions(args)
+func (app *App) getParentIndex(node *FileNode) int {
+	parentNode := app.fileTree
+	for _, index := range app.getSelectionIndexes()[:len(app.getSelectionIndexes())-1] {
+		parentNode = parentNode.Children[index]
 	}
+
+	for i, child := range parentNode.Children {
+		if child == node {
+			return i
+		}
+	}
+
+	return 0
 }
 
 func (app *App) retryWithShortFormOptions(args []string) {
